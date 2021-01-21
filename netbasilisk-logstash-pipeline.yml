@@ -1,0 +1,64 @@
+---
+- hosts: netbasilisk_logstash
+
+  handlers:
+    - name: Restart Logstash
+      systemd:
+        service: logstash
+        state: restarted
+
+  tasks:
+    - name: Add elasticsearch GPG key for RPM
+      rpm_key:
+        state: present
+        key: https://artifacts.elastic.co/GPG-KEY-elasticsearch
+    - name: Add elasticsearch repo
+      template:
+        src: templates/elasticsearch.repo.j2
+        dest: /etc/yum.repos.d/elasticsearch.repo
+        owner: root
+        group: wheel
+        mode: '0644'
+    - name: Install Requirements
+      yum:
+        name:
+          - java-1.8.0-openjdk
+        state: installed
+    - name: Install LogStash
+      yum:
+        enablerepo: elasticsearch
+        name:
+          - logstash
+        state: installed
+
+    - name: Add variables to logstash environment
+      blockinfile:
+        path: /etc/default/logstash
+        block: |
+          LS_JAVA_OPTS="{{ LS_JAVA_OPTS | default('') }} -Djava.io.tmpdir=/var/tmp"
+      notify:
+        - Restart Logstash
+    - name: Copy logstash pipeline
+      copy:
+        src: archiving-sandbox/logstash_pipeline
+        dest: /usr/share/logstash/pipeline/
+      notify:
+        - Restart Logstash
+
+    - name: Enable and start ELK services
+      systemd:
+        daemon_reload: yes
+        enabled: yes
+        state: started
+        name: logstash
+
+
+    # - name: Open HTTP and HTTPS ports
+    #   firewalld:
+    #     service: "{{ item }}"
+    #     permanent: yes
+    #     immediate: yes
+    #     state: enabled
+    #   with_items:
+    #     - http
+    #     - https
